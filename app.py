@@ -167,7 +167,7 @@ photos = sorted([*PHOTOS_DIR.glob("*.jpg"), *PHOTOS_DIR.glob("*.jpeg"), *PHOTOS_
 left, right = st.columns([1.25, .75], vertical_alignment="center")
 with left:
     st.markdown('<section class="hero"><div class="eyebrow">Uma brincadeira para celebrar</div><h1>Bolão de José Benjamin</h1></section>', unsafe_allow_html=True)
-    st.markdown('<div class="intro-card"><p>Oi, pessoal! Eu sou o José Benjamin e estou quase chegando. Antes de me conhecerem, que tal tentarem adivinhar o dia e peso da minha estreia? Escolham uma data e um peso, deixem o nome de vocês e acompanhem os palpites por aqui. 🤎</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="intro-card"><p>Oi, pessoal! Eu sou o José Benjamin e estou quase chegando. Antes de me conhecerem, que tal tentarem adivinhar o dia e peso da minha estreia? Escolham uma data e um peso, deixem o nome de vocês e acompanhem os palpites por aqui.🤎 <br>A minha data prevista é o dia 20 de Setembro, mas quem sabe o dia mesmo só é Deus kkkkkk</p></div>', unsafe_allow_html=True)
 with right:
     if photos:
         st.image(photos[0], width="stretch")
