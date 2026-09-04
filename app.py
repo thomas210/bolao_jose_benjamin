@@ -43,10 +43,10 @@ st.markdown("""<style>
     background: #f2e3d7 !important;
 }
 .stTabs [data-baseweb="tab-highlight"] { background-color: #b77a5c !important; }
-div[data-testid="stSlider"] [data-baseweb="slider"] > div > div:first-child {
+div[data-testid="stSlider"] [data-baseweb="slider"] > div {
     background: #ead5c7 !important;
 }
-div[data-testid="stSlider"] [data-baseweb="slider"] > div > div:first-child > div {
+div[data-testid="stSlider"] [data-baseweb="slider"] > div > div {
     background: #b77a5c !important;
 }
 div[data-testid="stSliderThumbValue"] [role="slider"] {
@@ -56,6 +56,15 @@ div[data-testid="stSliderThumbValue"] [role="slider"] {
 }
 div[data-testid="stSlider"] [role="slider"]:focus-visible {
     outline: 3px solid rgba(183, 122, 92, .42) !important;
+}
+div[data-testid="stWidgetLabel"] p,
+div[data-testid="stWidgetLabel"] label,
+div[data-testid="stTextInput"] label p,
+div[data-testid="stDateInput"] label p,
+div[data-testid="stSlider"] label p {
+    color: #68483c !important;
+    opacity: 1 !important;
+    font-weight: 600 !important;
 }
 </style>""", unsafe_allow_html=True)
 
@@ -171,7 +180,7 @@ for slot, value, label in zip(stats, [len(bets), len(active), bets["nome"].nuniq
     with slot: st.markdown(f'<div class="stat"><b>{value}</b>{label}</div>', unsafe_allow_html=True)
 
 st.write("")
-tab_bet, tab_panel, tab_weight = st.tabs(["✦ Fazer meu palpite", "📅 Palpites de data", "⚖️ Resultados de peso"])
+tab_bet, tab_panel, tab_weight = st.tabs(["✦ Fazer meu palpite", "📅 Datas", "⚖️ Pesos"])
 with tab_bet:
     st.subheader("Quando você acha que eu chego?")
     st.caption("Cada pessoa pode participar uma vez. O palpite fica público no painel.")
