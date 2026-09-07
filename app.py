@@ -8,13 +8,32 @@ import re
 
 import pandas as pd
 import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
 
 BASE_DIR = Path(__file__).parent
-DATA_FILE = BASE_DIR / "palpites.csv"
 PHOTOS_DIR = BASE_DIR / "fotos_jose"
 
 st.set_page_config(page_title="Bolão de José Benjamin", page_icon="🍼", layout="wide", initial_sidebar_state="collapsed")
 
+# ==========================================
+# 1. AUTENTICAÇÃO DO GOOGLE SHEETS
+# ==========================================
+scopes = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+skey = st.secrets["gcp_service_account"]
+credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+client = gspread.authorize(credentials)
+
+# COLOQUE A URL DA SUA PLANILHA AQUI
+URL_PLANILHA = st.secrets["url_planilha"]
+sheet = client.open_by_url(URL_PLANILHA).sheet1
+
+# ==========================================
+# ESTILOS CSS (Mantidos inalterados)
+# ==========================================
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
 .stApp { background: #fbf7f2; color: #3e322d; } h1,h2,h3 { font-family:'Playfair Display',Georgia,serif!important;color:#68483c; }
@@ -27,68 +46,62 @@ div[data-testid="stForm"]{border:1px solid #ecdcd0;border-radius:20px;background
 @media (max-width: 600px){.bet-card-header{align-items:flex-start;flex-direction:column;gap:.55rem}.bet-count{align-self:flex-start}}
 </style>""", unsafe_allow_html=True)
 
-# As abas do Streamlit herdam cores diferentes no modo escuro. Estas regras
-# mantêm contraste no tema visual claro e fixo deste bolão.
 st.markdown("""<style>
-.stTabs [role="tab"], .stTabs [data-baseweb="tab"] {
-    color: #68483c !important;
-    opacity: 1 !important;
-    font-weight: 700 !important;
-}
-.stTabs [role="tab"][aria-selected="true"], .stTabs [data-baseweb="tab"][aria-selected="true"] {
-    color: #9d6048 !important;
-}
-.stTabs [role="tab"]:hover, .stTabs [data-baseweb="tab"]:hover {
-    color: #7c4634 !important;
-    background: #f2e3d7 !important;
-}
+.stTabs [role="tab"], .stTabs [data-baseweb="tab"] { color: #68483c !important; opacity: 1 !important; font-weight: 700 !important; }
+.stTabs [role="tab"][aria-selected="true"], .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #9d6048 !important; }
+.stTabs [role="tab"]:hover, .stTabs [data-baseweb="tab"]:hover { color: #7c4634 !important; background: #f2e3d7 !important; }
 .stTabs [data-baseweb="tab-highlight"] { background-color: #b77a5c !important; }
-div[data-testid="stSlider"] [data-baseweb="slider"] > div {
-    background: #ead5c7 !important;
-}
-div[data-testid="stSlider"] [data-baseweb="slider"] > div > div {
-    background: #b77a5c !important;
-}
-div[data-testid="stSliderThumbValue"] [role="slider"] {
-    background: #9d6048 !important;
-    border: 2px solid #fffdf9 !important;
-    box-shadow: 0 1px 5px rgba(104, 72, 60, .28) !important;
-}
-div[data-testid="stSlider"] [role="slider"]:focus-visible {
-    outline: 3px solid rgba(183, 122, 92, .42) !important;
-}
-div[data-testid="stWidgetLabel"] p,
-div[data-testid="stWidgetLabel"] label,
-div[data-testid="stTextInput"] label p,
-div[data-testid="stDateInput"] label p,
-div[data-testid="stSlider"] label p {
-    color: #68483c !important;
-    opacity: 1 !important;
-    font-weight: 600 !important;
-}
+div[data-testid="stSlider"] [data-baseweb="slider"] > div { background: #ead5c7 !important; }
+div[data-testid="stSlider"] [data-baseweb="slider"] > div > div { background: #b77a5c !important; }
+div[data-testid="stSliderThumbValue"] [role="slider"] { background: #9d6048 !important; border: 2px solid #fffdf9 !important; box-shadow: 0 1px 5px rgba(104, 72, 60, .28) !important; }
+div[data-testid="stSlider"] [role="slider"]:focus-visible { outline: 3px solid rgba(183, 122, 92, .42) !important; }
+div[data-testid="stWidgetLabel"] p, div[data-testid="stWidgetLabel"] label, div[data-testid="stTextInput"] label p, div[data-testid="stDateInput"] label p, div[data-testid="stSlider"] label p { color: #68483c !important; opacity: 1 !important; font-weight: 600 !important; }
 </style>""", unsafe_allow_html=True)
 
-def load_bets() -> pd.DataFrame:
+# ==========================================
+# 2. CARREGAMENTO DOS DADOS (READ)
+# ==========================================
+@st.cache_data
+def load_bets(_planilha) -> pd.DataFrame:
     columns = ["nome", "data_palpite", "peso_palpite_kg", "enviado_em"]
-    if not DATA_FILE.exists():
+    
+    # Busca todos os registros da planilha
+    records = _planilha.get_all_records()
+    
+    if not records:
         return pd.DataFrame(columns=columns)
+    
+    bets = pd.DataFrame(records)
+    
     try:
-        bets = pd.read_csv(DATA_FILE)
-        # Arquivos criados antes do palpite de peso continuam funcionando.
+        # Tratamento das colunas (mantendo compatibilidade com Pandas)
         if "peso_palpite_kg" not in bets.columns:
             bets["peso_palpite_kg"] = pd.NA
+            
         if set(columns).issubset(bets.columns):
+            # Garante que dados vazios ou formatados com vírgula (se editados à mão no Sheets) sejam limpos
+            if bets["peso_palpite_kg"].dtype == 'O': 
+                bets["peso_palpite_kg"] = bets["peso_palpite_kg"].astype(str).str.replace(',', '.')
+                
             bets["data_palpite"] = pd.to_datetime(bets["data_palpite"], errors="coerce")
             bets["peso_palpite_kg"] = pd.to_numeric(bets["peso_palpite_kg"], errors="coerce")
             return bets.dropna(subset=["data_palpite"])
-    except (OSError, pd.errors.ParserError):
+    except Exception:
         pass
+        
     return pd.DataFrame(columns=columns)
 
-def save_bet(name: str, guess: date, weight: float) -> None:
-    bets = load_bets()
-    entry = pd.DataFrame([{"nome": name, "data_palpite": pd.Timestamp(guess), "peso_palpite_kg": weight, "enviado_em": datetime.now().isoformat(timespec="seconds")}])
-    pd.concat([bets, entry], ignore_index=True).to_csv(DATA_FILE, index=False)
+# ==========================================
+# 3. GRAVAÇÃO DOS DADOS (WRITE)
+# ==========================================
+def save_bet(_planilha, name: str, guess: date, weight: float) -> None:
+    enviado_em = datetime.now().isoformat(timespec="seconds")
+    
+    # Adiciona a linha direto no Google Sheets (ordem deve bater com os cabeçalhos)
+    _planilha.append_row([name, str(guess), weight, enviado_em])
+    
+    # Limpa o cache para que os gráficos atualizem na mesma hora
+    load_bets.clear()
 
 def clean_name(name: str) -> str:
     return " ".join(name.strip().split())
@@ -96,8 +109,8 @@ def clean_name(name: str) -> str:
 MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 
 def calendar_view(counts: dict[date, int], highlight: bool = False, intensity: bool = False) -> None:
-    """Renderiza os meses com destaque do líder ou cor proporcional aos palpites."""
     dates = sorted(counts)
+    if not dates: return
     start, end = dates[0], dates[-1]
     year, month = start.year, start.month
     max_count = max(counts.values())
@@ -122,7 +135,6 @@ def calendar_view(counts: dict[date, int], highlight: bool = False, intensity: b
                 if highlight and total == max_count and total:
                     classes += " top-day"
                 elif intensity and total:
-                    # Do creme ao terracota: a cor máxima é a do dia líder original.
                     fraction = total / max_count
                     light, dark = (242, 227, 215), (183, 122, 92)
                     red, green, blue = [round(a + (b - a) * fraction) for a, b in zip(light, dark)]
@@ -136,7 +148,6 @@ def calendar_view(counts: dict[date, int], highlight: bool = False, intensity: b
             year, month = year + 1, 1
 
 def bet_cards(records: pd.DataFrame) -> None:
-    """Exibe um cartão por data, dos dias mais disputados aos menos disputados."""
     grouped = records.groupby("data_palpite", sort=False)
     for bet_day, group in grouped:
         total = len(group)
@@ -150,7 +161,6 @@ def bet_cards(records: pd.DataFrame) -> None:
         )
 
 def weight_cards(records: pd.DataFrame) -> None:
-    """Exibe um cartão por peso, com a lista de quem apostou nele."""
     for weight, group in records.groupby("peso_palpite_kg", sort=False):
         total = len(group)
         label = "palpite" if total == 1 else "palpites"
@@ -162,8 +172,12 @@ def weight_cards(records: pd.DataFrame) -> None:
             unsafe_allow_html=True,
         )
 
-bets = load_bets()
+# ==========================================
+# CHAMADA DOS DADOS
+# ==========================================
+bets = load_bets(sheet)
 photos = sorted([*PHOTOS_DIR.glob("*.jpg"), *PHOTOS_DIR.glob("*.jpeg"), *PHOTOS_DIR.glob("*.png")])
+
 left, right = st.columns([1.25, .75], vertical_alignment="center")
 with left:
     st.markdown('<section class="hero"><div class="eyebrow">Uma brincadeira para celebrar</div><h1>Bolão de José Benjamin</h1></section>', unsafe_allow_html=True)
@@ -181,6 +195,7 @@ for slot, value, label in zip(stats, [len(bets), len(active), bets["nome"].nuniq
 
 st.write("")
 tab_bet, tab_panel, tab_weight = st.tabs(["✦ Fazer meu palpite", "📅 Datas", "⚖️ Pesos"])
+
 with tab_bet:
     st.subheader("Quando você acha que eu chego?")
     st.caption("Cada pessoa pode participar uma vez. O palpite fica público no painel.")
@@ -190,15 +205,17 @@ with tab_bet:
         weight = st.slider("E com qual peso eu vou nascer? (em kg)", min_value=2.400, max_value=4.000, value=2.800, step=0.010, format="%.3f")
         
         submitted = st.form_submit_button("Registrar meu palpite 🍼")
+    
     if submitted:
         name = clean_name(name)
-        if len(name) < 2 or not re.search(r"[A-Za-zÀ-ÿ]", name): st.error("Conte para a gente seu nome, por favor.")
-        # elif not bets.empty and bets["nome"].str.casefold().eq(name.casefold()).any(): st.warning("Já temos um palpite registrado com esse nome. 😊")
+        if len(name) < 2 or not re.search(r"[A-Za-zÀ-ÿ]", name): 
+            st.error("Conte para a gente seu nome, por favor.")
         else:
-            save_bet(name, guess, weight)
+            save_bet(sheet, name, guess, weight)
             st.success(f"Pronto, {name}! Seu palpite é {guess.strftime('%d/%m/%Y')} e {weight:.3f} kg.")
             st.balloons()
-            # st.rerun()
+            # AGORA DESCOMENTADO: Recarrega a tela para exibir nos gráficos instantaneamente
+            st.rerun() 
 
 with tab_panel:
     st.subheader("A torcida está assim")
