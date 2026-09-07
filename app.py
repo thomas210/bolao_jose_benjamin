@@ -31,9 +31,6 @@ client = gspread.authorize(credentials)
 URL_PLANILHA = st.secrets["url_planilha"]
 sheet = client.open_by_url(URL_PLANILHA).sheet1
 
-# ==========================================
-# ESTILOS CSS (Mantidos inalterados)
-# ==========================================
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
 .stApp { background: #fbf7f2; color: #3e322d; } h1,h2,h3 { font-family:'Playfair Display',Georgia,serif!important;color:#68483c; }
@@ -58,15 +55,37 @@ div[data-testid="stSlider"] [role="slider"]:focus-visible { outline: 3px solid r
 div[data-testid="stWidgetLabel"] p, div[data-testid="stWidgetLabel"] label, div[data-testid="stTextInput"] label p, div[data-testid="stDateInput"] label p, div[data-testid="stSlider"] label p { color: #68483c !important; opacity: 1 !important; font-weight: 600 !important; }
 </style>""", unsafe_allow_html=True)
 
-# ==========================================
-# 2. CARREGAMENTO DOS DADOS (READ)
-# ==========================================
+def parse_weight(value: object) -> float | None:
+    """Converte pesos vindos do Sheets nos formatos brasileiro ou internacional."""
+    if value is None or pd.isna(value):
+        return None
+
+    text = str(value).strip().replace(" ", "")
+    if not text:
+        return None
+
+    # O separador mais à direita é o decimal quando ambos aparecem.
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif "," in text:
+        text = text.replace(",", ".")
+
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 @st.cache_data
 def load_bets(_planilha) -> pd.DataFrame:
     columns = ["nome", "data_palpite", "peso_palpite_kg", "enviado_em"]
     
     # Busca todos os registros da planilha
-    records = _planilha.get_all_records()
+    # Impede que o gspread interprete "2,800" como 2800 antes do tratamento local.
+    records = _planilha.get_all_records(numericise_ignore=["all"])
     
     if not records:
         return pd.DataFrame(columns=columns)
@@ -79,12 +98,8 @@ def load_bets(_planilha) -> pd.DataFrame:
             bets["peso_palpite_kg"] = pd.NA
             
         if set(columns).issubset(bets.columns):
-            # Garante que dados vazios ou formatados com vírgula (se editados à mão no Sheets) sejam limpos
-            if bets["peso_palpite_kg"].dtype == 'O': 
-                bets["peso_palpite_kg"] = bets["peso_palpite_kg"].astype(str).str.replace(',', '.')
-                
             bets["data_palpite"] = pd.to_datetime(bets["data_palpite"], errors="coerce")
-            bets["peso_palpite_kg"] = pd.to_numeric(bets["peso_palpite_kg"], errors="coerce")
+            bets["peso_palpite_kg"] = bets["peso_palpite_kg"].map(parse_weight)
             return bets.dropna(subset=["data_palpite"])
     except Exception:
         pass
